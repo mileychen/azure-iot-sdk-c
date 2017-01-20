@@ -476,6 +476,9 @@ IOTHUB_ACCOUNT_INFO_HANDLE IoTHubAccount_Init(void)
         }
         else
         {
+            printf("cert is: %s\r\n", iothub_account_info->x509Certificate);
+            printf("key is: %s\r\n", iothub_account_info->x509PrivateKey);
+            printf("thumb is: %s\r\n", iothub_account_info->x509Thumbprint);
             if (retrieveConnStringInfo(iothub_account_info) != 0)
             {
                 LogError("retrieveConnStringInfo failed.\r\n");
