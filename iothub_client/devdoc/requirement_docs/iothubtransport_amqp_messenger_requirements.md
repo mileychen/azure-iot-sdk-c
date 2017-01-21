@@ -193,13 +193,15 @@ Summary: informs the messenger instance that an existing uAMQP messagereceiver s
 	extern void messenger_do_work(MESSENGER_HANDLE messenger_handle);
 ```
 
-Summary: creates/destroys the uAMQP messagereceiver according to current subscription (messenger_subscribe_for_messages/messenger_unsubscribe_for_messages), sends pending D2C events. 
+Summary: creates/destroys the uAMQP messagesender, messagereceiver according to current subscription (messenger_subscribe_for_messages/messenger_unsubscribe_for_messages), sends pending D2C events. 
 
-**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_065: [**If `messenger_handle` is NULL, messenger_do_work() shall fail and return**]**  
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_065: [**If `messenger_handle` is NULL, messenger_do_work() shall fail and return**]**
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_151: [**If `instance->state` is MESSENGER_STATE_STARTING, messenger_do_work() shall create and open `instance->message_sender`**]**  
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_152: [**If `instance->state` is MESSENGER_STATE_STOPPING, messenger_do_work() shall close and destroy `instance->message_sender` and `instance->message_receiver`**]**  
 **SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_066: [**If `instance->state` is not MESSENGER_STATE_STARTED, messenger_do_work() shall return**]**  
 
 
-### Create/start the message sender
+### Create/Open the message sender
 
 **SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_033: [**A variable, named `devices_path`, shall be created concatenating `instance->iothub_host_fqdn`, "/devices/" and `instance->device_id`**]**  
 **SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_034: [**If `devices_path` fails to be created, messenger_start() shall fail and return __LINE__**]**  
@@ -240,7 +242,6 @@ static void on_event_sender_state_changed_callback(void* context, MESSAGE_SENDER
 **SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_062: [**`instance->message_receiver` shall be destroyed using messagereceiver_destroy()**]**  
 **SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_063: [**`instance->sender_link` shall be destroyed using link_destroy()**]**  
 **SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_064: [**`instance->receiver_link` shall be destroyed using link_destroy()**]**  
-
 
 
 ### Create a message receiver
@@ -314,6 +315,19 @@ static AMQP_VALUE on_message_received_internal_callback(const void* context, MES
 **SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_130: [**MESSAGE_HANDLE shall be destroyed using free()**]**  
 
 
+### Send pending events
+
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_153: [**messenger_do_work() shall move each event to be sent from `instance->wait_to_send_list` to `instance->in_progress_list`**]**  
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_154: [**A MESSAGE_HANDLE shall be obtained out of the event's IOTHUB_MESSAGE_HANDLE instance by using message_create_from_iothub_message()**]**  
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_155: [**If message_create_from_iothub_message() fails, `task->on_event_send_complete_callback` shall be invoked with result EVENT_SEND_COMPLETE_RESULT_ERROR_CANNOT_PARSE**]**  
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_156: [**If message_create_from_iothub_message() fails, messenger_do_work() shall skip to the next event to be sent**]**  
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_157: [**The MESSAGE_HANDLE shall be submitted for sending using messagesender_send(), passing `internal_on_event_send_complete_callback`**]**  
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_158: [**If messagesender_send() fails, `task->on_event_send_complete_callback` shall be invoked with result EVENT_SEND_COMPLETE_RESULT_ERROR_FAIL_SENDING**]**  
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_159: [**The MESSAGE_HANDLE shall be destroyed using message_destroy().**]**  
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_160: [**If any failure occurs the event shall be removed from `instance->in_progress_list` and destroyed**]**  
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_161: [**If messenger_do_work() fail sending events for `instance->event_send_retry_limit` times, it shall invoke `instance->on_state_changed_callback`, if provided, with error code MESSENGER_STATE_ERROR**]**  
+
+
 ## messenger_destroy
 
 ```c
@@ -323,13 +337,15 @@ static AMQP_VALUE on_message_received_internal_callback(const void* context, MES
 Summary: stops the messenger if needed, destroys all the components within the messenger data structure (messenger_handle) and releases any allocated memory.
 
 **SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_109: [**If `messenger_handle` is NULL, messenger_destroy() shall fail and return**]**  
-**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_110: [**If the `instance->state` is not MESSENGER_STATE_STOPPED, messenger_destroy() shall invoke messenger_stop(), ignoring its result**]**  
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_110: [**If the `instance->state` is not MESSENGER_STATE_STOPPED, messenger_destroy() shall invoke messenger_stop() and messenger_do_work() once**]**  
 
 Note: when events are moved from wait_to_send_list to in_progress_list, they are moved from beginning (oldest element) to end (newest).
 Due to the logic used by messenger_do_work(), all elements of in_progress_list are always older than any current element on wait_to_send_list.
 In that case, when they are rolled back, they need to go to the beginning of the wait_to_send_list.
 
-**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_111: [**All elements of `instance->in_progress_list` shall be moved to the beginning of `instance->wait_to_send_list`**]**  
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_111: [**All elements of `instance->in_progress_list` shall be removed, invoking `task->on_event_send_complete_callback` for each with EVENT_SEND_COMPLETE_RESULT_MESSENGER_DESTROYED**]**  
+
+**SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_150: [**`instance->in_progress_list` shall be destroyed using singlylinkedlist_destroy()**]**  
 **SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_112: [**`instance->iothub_host_fqdn` shall be destroyed using STRING_delete()**]**  
 **SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_113: [**`instance->device_id` shall be destroyed using STRING_delete()**]**  
 **SRS_IOTHUBTRANSPORT_AMQP_MESSENGER_09_114: [**messenger_destroy() shall destroy `instance` with free()**]**  
