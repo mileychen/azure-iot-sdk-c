@@ -4,18 +4,39 @@
 #include "iothubtransportamqp_websockets.h"
 #include "azure_c_shared_utility/wsio.h"
 #include "iothubtransport_amqp_common.h"
+#include "azure_c_shared_utility/tlsio.h"
+#include "azure_c_shared_utility/platform.h"
 
 #define DEFAULT_WS_PROTOCOL_NAME "AMQPWSB10"
 #define DEFAULT_WS_RELATIVE_PATH "/$iothub/websocket"
 #define DEFAULT_WS_PORT 443
 
+static XIO_HANDLE getTLSIOTransport(const char* fqdn)
+{
+	XIO_HANDLE result;
+	TLSIO_CONFIG tls_io_config;
+	tls_io_config.hostname = fqdn;
+	tls_io_config.port = DEFAULT_WS_PORT;
+	// Codes_SRS_IOTHUBTRANSPORTAMQP_09_002: [getTLSIOTransport shall get `io_interface_description` using platform_get_default_tlsio())]
+	const IO_INTERFACE_DESCRIPTION* io_interface_description = platform_get_default_tlsio();
+
+	// Codes_SRS_IOTHUBTRANSPORTAMQP_09_003: [If `io_interface_description` is NULL getTLSIOTransport shall return NULL.]
+	// Codes_SRS_IOTHUBTRANSPORTAMQP_09_004: [getTLSIOTransport shall return the XIO_HANDLE created using xio_create().]
+	if ((result = xio_create(io_interface_description, &tls_io_config)) == NULL)
+	{
+		LogError("Failed to get the TLS/IO transport (xio_create failed)");
+	}
+
+	return result;
+}
+
 static XIO_HANDLE getWebSocketsIOTransport(const char* fqdn)
 {
     WSIO_CONFIG ws_io_config;
-    ws_io_config.host = fqdn;
+    ws_io_config.hostname = fqdn;
     ws_io_config.port = DEFAULT_WS_PORT;
-    ws_io_config.protocol_name = DEFAULT_WS_PROTOCOL_NAME;
-    ws_io_config.relative_path = DEFAULT_WS_RELATIVE_PATH;
+    ws_io_config.protocol = DEFAULT_WS_PROTOCOL_NAME;
+    ws_io_config.resource_name = DEFAULT_WS_RELATIVE_PATH;
     ws_io_config.use_ssl = true;
 
     // Codes_SRS_IoTHubTransportAMQP_WS_09_002: [getWebSocketsIOTransport shall get `io_interface_description` using wsio_get_interface_description()]

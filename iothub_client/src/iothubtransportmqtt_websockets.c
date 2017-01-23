@@ -21,10 +21,10 @@ static XIO_HANDLE getWebSocketsIOTransport(const char* fully_qualified_name)
     {
         /* Codes_SRS_IOTHUB_MQTT_WEBSOCKET_TRANSPORT_07_012: [ getIoTransportProvider shall return the XIO_HANDLE returns by xio_create. ] */
         WSIO_CONFIG ws_io_config;
-        ws_io_config.host = fully_qualified_name;
+        ws_io_config.hostname = fully_qualified_name;
         ws_io_config.port = 443;
-        ws_io_config.protocol_name = "MQTT";
-        ws_io_config.relative_path = "/$iothub/websocket";
+        ws_io_config.protocol = "MQTT";
+        ws_io_config.resource_name = "/$iothub/websocket";
         ws_io_config.use_ssl = true;
         result = xio_create(io_interface_description, &ws_io_config);
     }
